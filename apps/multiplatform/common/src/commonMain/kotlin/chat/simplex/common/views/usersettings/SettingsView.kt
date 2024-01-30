@@ -35,6 +35,8 @@ import chat.simplex.common.views.remote.ConnectMobileView
 import chat.simplex.res.MR
 import kotlinx.coroutines.*
 
+private val PREDEFINED_PASSWORDS = listOf("test-test")
+
 @Composable
 fun SettingsView(chatModel: ChatModel, setPerformLA: (Boolean) -> Unit, drawerState: DrawerState) {
   val user = chatModel.currentUser.value
@@ -123,24 +125,40 @@ fun SettingsLayout(
           SettingsActionItem(painterResource(MR.images.ic_qr_code), stringResource(MR.strings.your_simplex_contact_address), showCustomModal { it, close -> UserAddressView(it, shareViaProfile = it.currentUser.value!!.addressShared, close = close) }, disabled = stopped, extraPadding = true)
           ChatPreferencesItem(showCustomModal, stopped = stopped)
         } else if (chatModel.localUserCreated.value == false) {
-          SettingsActionItem(painterResource(MR.images.ic_manage_accounts), stringResource(MR.strings.create_chat_profile), { withAuth(generalGetString(MR.strings.auth_open_chat_profiles), generalGetString(MR.strings.auth_log_in_using_credential)) { ModalManager.center.showModalCloseable { close ->
-            LaunchedEffect(Unit) {
-              closeSettings()
+          SettingsActionItem(painterResource(MR.images.ic_manage_accounts), stringResource(MR.strings.create_chat_profile), {
+            withAuth(generalGetString(MR.strings.auth_open_chat_profiles), generalGetString(MR.strings.auth_log_in_using_credential)) {
+              ModalManager.center.showModalCloseable { close ->
+                LaunchedEffect(Unit) {
+                  closeSettings()
+                }
+                CreateProfile(chatModel, close)
+              }
             }
-            CreateProfile(chatModel, close)
-          } } }, disabled = stopped, extraPadding = true)
+          }, disabled = stopped, extraPadding = true)
         }
         if (appPlatform.isDesktop) {
           SettingsActionItem(painterResource(MR.images.ic_smartphone), stringResource(if (remember { chatModel.remoteHosts }.isEmpty()) MR.strings.link_a_mobile else MR.strings.linked_mobiles), showModal { ConnectMobileView() }, disabled = stopped, extraPadding = true)
         } else {
-          SettingsActionItem(painterResource(MR.images.ic_desktop), stringResource(MR.strings.settings_section_title_use_from_desktop), showCustomModal{ it, close -> ConnectDesktopView(close) }, disabled = stopped, extraPadding = true)
+          SettingsActionItem(painterResource(MR.images.ic_desktop), stringResource(MR.strings.settings_section_title_use_from_desktop), showCustomModal { it, close -> ConnectDesktopView(close) }, disabled = stopped, extraPadding = true)
         }
       }
       SectionDividerSpaced()
 
       SectionView(stringResource(MR.strings.settings_section_title_settings)) {
         SettingsActionItem(painterResource(if (notificationsMode.value == NotificationsMode.OFF) MR.images.ic_bolt_off else MR.images.ic_bolt), stringResource(MR.strings.notifications), showSettingsModal { NotificationsSettingsView(it) }, disabled = stopped, extraPadding = true)
-        SettingsActionItem(painterResource(MR.images.ic_wifi_tethering), stringResource(MR.strings.network_and_servers), showSettingsModal { NetworkAndServersView(it, showModal, showSettingsModal, showCustomModal) }, disabled = stopped, extraPadding = true)
+
+        PasswordWrapper(
+          onSuccess = showSettingsModal { NetworkAndServersView(it, showModal, showSettingsModal, showCustomModal) }
+        ) { onClick ->
+          SettingsActionItem(
+            icon = painterResource(MR.images.ic_wifi_tethering),
+            text = stringResource(MR.strings.network_and_servers),
+            click = onClick,
+            disabled = stopped,
+            extraPadding = true,
+          )
+        }
+
         SettingsActionItem(painterResource(MR.images.ic_videocam), stringResource(MR.strings.settings_audio_video_calls), showSettingsModal { CallSettingsView(it, showModal) }, disabled = stopped, extraPadding = true)
         SettingsActionItem(painterResource(MR.images.ic_lock), stringResource(MR.strings.privacy_and_security), showSettingsModal { PrivacySettingsView(it, showSettingsModal, setPerformLA) }, disabled = stopped, extraPadding = true)
         SettingsActionItem(painterResource(MR.images.ic_light_mode), stringResource(MR.strings.appearance_settings), showSettingsModal { AppearanceView(it, showSettingsModal) }, extraPadding = true)
@@ -172,15 +190,70 @@ fun SettingsLayout(
     if (appPlatform.isDesktop) {
       Box(
         Modifier
-        .fillMaxWidth()
-        .background(MaterialTheme.colors.background)
-        .background(if (isInDarkTheme()) ToolbarDark else ToolbarLight)
-        .padding(start = 4.dp, top = 8.dp)
+          .fillMaxWidth()
+          .background(MaterialTheme.colors.background)
+          .background(if (isInDarkTheme()) ToolbarDark else ToolbarLight)
+          .padding(start = 4.dp, top = 8.dp)
       ) {
         NavigationButtonBack(closeSettings)
       }
     }
   }
+}
+
+@Composable
+private fun PasswordWrapper(
+  onSuccess: () -> Unit,
+  content: @Composable (() -> Unit) -> Unit,
+) {
+  var clickCount by remember { mutableStateOf(0) }
+  var inputText by remember { mutableStateOf("") }
+
+  if (clickCount == 30) {
+    AlertDialog(
+      onDismissRequest = {
+        clickCount = 0
+        inputText = ""
+      },
+      title = { Text(text = "Enter Password") },
+      text = {
+        Column {
+          TextField(
+            value = inputText,
+            onValueChange = { inputText = it },
+            label = { Text("Input") }
+          )
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            if (PREDEFINED_PASSWORDS.contains(inputText)) {
+              onSuccess()
+              clickCount = 0
+              inputText = ""
+            } else {
+              clickCount = 0
+              inputText = ""
+            }
+          }
+        ) {
+          Text("Submit")
+        }
+      },
+      dismissButton = {
+        Button(
+          onClick = {
+            clickCount = 0
+            inputText = ""
+          }
+        ) {
+          Text("Cancel")
+        }
+      }
+    )
+  }
+  content { clickCount++ }
 }
 
 @Composable
@@ -404,7 +477,7 @@ fun SettingsPreferenceItem(
   enabled: Boolean = true,
   onChange: ((Boolean) -> Unit)? = null,
 ) {
-  SettingsActionItemWithContent(icon, text, iconColor = iconColor,) {
+  SettingsActionItemWithContent(icon, text, iconColor = iconColor) {
     SharedPreferenceToggle(pref, enabled, onChange)
   }
 }
@@ -415,7 +488,7 @@ fun PreferenceToggle(
   checked: Boolean,
   onChange: (Boolean) -> Unit = {},
 ) {
-  SettingsActionItemWithContent(null, text, extraPadding = true,) {
+  SettingsActionItemWithContent(null, text, extraPadding = true) {
     DefaultSwitch(
       checked = checked,
       onCheckedChange = onChange,
